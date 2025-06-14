@@ -840,6 +840,11 @@ async def create_member(member_data: MemberCreate, current_user: User = Depends(
     if existing_member:
         raise HTTPException(status_code=400, detail="Member with this email already exists")
     
+    # Check if user already exists
+    existing_user = await db.users.find_one({"email": member_data.email})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
     # Get plan details
     plan = await db.plans.find_one({"id": member_data.plan_id, "gym_id": current_user.gym_id})
     if not plan:
@@ -851,6 +856,18 @@ async def create_member(member_data: MemberCreate, current_user: User = Depends(
     
     # Hash password for member login
     password_hash = hash_password(member_data.password)
+    
+    # Create user account for member login
+    user = User(
+        email=member_data.email,
+        password_hash=password_hash,
+        name=member_data.name,
+        phone=member_data.phone,
+        role=UserRole.MEMBER,
+        gym_id=current_user.gym_id
+    )
+    
+    await db.users.insert_one(user.dict())
     
     # Create member
     member = Member(
