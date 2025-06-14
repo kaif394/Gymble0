@@ -387,15 +387,16 @@ def main():
     # Test attendance system
     tester.test_get_attendance_qr_code()
     
-    # Test member login
-    if tester.member_id:
-        # For testing, we'd need a member email/password
-        # Using the admin credentials for now
-        if tester.test_member_login("ka1686037@gmail.com", "password123"):
+    # Test member login with the fixed credentials
+    if tester.test_member_login("test115133@example.com", "password123"):
+        print("✅ Member login successful with fixed credentials!")
+        tester.test_get_current_user()
+        tester.test_get_attendance_status()
+        if tester.qr_code_data:
+            tester.test_mark_attendance()
             tester.test_get_attendance_status()
-            if tester.qr_code_data:
-                tester.test_mark_attendance()
-                tester.test_get_attendance_status()
+    else:
+        print("❌ Member login failed with the fixed credentials")
     
     # Switch back to owner token
     tester.token = tester.owner_token
