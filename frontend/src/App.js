@@ -23,8 +23,8 @@ import TodoStylePlanTracker from './components/TodoStylePlanTracker';
 import MobileQRScanner from './components/MobileQRScanner';
 import MemberProfileManager from './components/MemberProfileManager';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+const API = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
 
 const AuthenticatedApp = ({ currentView, setCurrentView }) => {
   const { isAuthenticated, loading, user, logout } = useAuth();

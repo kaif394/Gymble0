@@ -686,7 +686,11 @@ async def register_member(member_data: MemberRegister):
     start_date = datetime.utcnow()
     end_date = start_date + timedelta(days=plan["duration_days"])
     
+    # Create a unique member ID
+    member_id = str(uuid.uuid4())
+    
     member = Member(
+        id=member_id,
         gym_id=member_data.gym_id,
         name=member_data.name,
         email=member_data.email,
@@ -694,10 +698,25 @@ async def register_member(member_data: MemberRegister):
         phone=member_data.phone,
         plan_id=member_data.plan_id,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        membership_status=MembershipStatus.ACTIVE
     )
     
     await db.members.insert_one(member.dict())
+    
+    # Create a payment record for the registration
+    payment = Payment(
+        gym_id=member_data.gym_id,
+        member_id=member_id,
+        member_name=member_data.name,
+        amount=plan["price"],
+        payment_method=PaymentMethod.CASH,  # Default payment method
+        status=PaymentStatus.PAID,
+        plan_id=member_data.plan_id,
+        plan_name=plan["name"]
+    )
+    
+    await db.payments.insert_one(payment.dict())
     
     # Create access token
     access_token = create_access_token(data={"sub": user.email})
@@ -1847,8 +1866,16 @@ app.include_router(api_router)
 ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React development server
     "http://127.0.0.1:3000",  # React development server alternative
+    "http://localhost:8000",  # Backend server
+    "http://127.0.0.1:8000",  # Backend server alternative
     "https://3e760d43-d9ca-4437-987a-1318bb7e632c.preview.emergentagent.com",  # Current Frontend URL
     "https://2774af71-268d-4b92-b718-31567f0daf4d.preview.emergentagent.com",  # Previous Frontend URL
+    "http://localhost:19000",  # Expo development server
+    "http://localhost:19001",  # Expo development server alternative
+    "http://localhost:19002",  # Expo development server alternative
+    "http://localhost:19006",  # Expo web
+    "exp://localhost:19000",  # Expo on device
+    "*",  # Allow all origins temporarily for debugging
 ]
 
 # Add environment variable for production origins
@@ -1859,7 +1886,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
 )
 
