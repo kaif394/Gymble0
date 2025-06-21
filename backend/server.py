@@ -156,6 +156,8 @@ class Gym(BaseModel):
     qr_code_data: Optional[str] = None  # UPI ID or payment details
     created_at: datetime = Field(default_factory=datetime.utcnow)
     is_active: bool = True
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class GymCreate(BaseModel):
     name: str
@@ -164,6 +166,8 @@ class GymCreate(BaseModel):
     email: str
     description: Optional[str] = None
     qr_code_data: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 # Plan Models
 class Plan(BaseModel):
@@ -467,6 +471,8 @@ class DietProgressCreate(BaseModel):
 class AttendanceMarkRequest(BaseModel):
     qr_code_data: str
     device_info: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class QRCodeResponse(BaseModel):
     qr_code_data: str
@@ -787,9 +793,11 @@ async def update_my_gym(gym_update: GymCreate, current_user: User = Depends(get_
     if not current_user.gym_id:
         raise HTTPException(status_code=404, detail="No gym found")
     
+    update_data = gym_update.dict(exclude_unset=True)
+    
     await db.gyms.update_one(
         {"id": current_user.gym_id},
-        {"$set": gym_update.dict()}
+        {"$set": update_data}
     )
     
     updated_gym = await db.gyms.find_one({"id": current_user.gym_id})
@@ -1287,6 +1295,90 @@ async def mark_attendance(
         )
         
         return attendance_record
+
+from math import radians, sin, cos, sqrt, atan2
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371  # Radius of Earth in kilometers
+
+    lat1_rad, lon1_rad, lat2_rad, lon2_rad = map(radians, [lat1, lon1, lat2, lon2])
+
+    dlon = lon2_rad - lon1_rad
+    dlat = lat2_rad - lat1_rad
+
+    a = sin(dlat / 2)**2 + cos(lat1_rad) * cos(lat2_rad) * sin(dlon / 2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+    distance = R * c
+    return distance * 1000  # in meters
+
+attendance_router = APIRouter(prefix="/attendance", tags=["Attendance"])
+
+@attendance_router.post("/mark-new")
+async def mark_attendance_new(
+    request_data: AttendanceMarkRequest, 
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != UserRole.MEMBER:
+        raise HTTPException(status_code=403, detail="Only members can mark attendance")
+
+    if not current_user.gym_id:
+        raise HTTPException(status_code=400, detail="No gym associated with member")
+
+    # 1. Get Gym's Location
+    gym = await db.gyms.find_one({"id": current_user.gym_id})
+    if not gym or not gym.get("latitude") or not gym.get("longitude"):
+        raise HTTPException(status_code=400, detail="Gym location not set up")
+
+    # 2. Check Location
+    distance = haversine(request_data.latitude, request_data.longitude, gym["latitude"], gym["longitude"])
+    if distance > 200:
+        raise HTTPException(status_code=400, detail=f"You must be within 200 meters of the gym to check in. You are {int(distance)} meters away.")
+
+    # 3. Validate QR Code
+    if not validate_qr_code(request_data.qr_code_data, current_user.gym_id):
+        raise HTTPException(status_code=400, detail="Invalid or expired QR code")
+
+    # 4. Get Member Details
+    member = await db.members.find_one({"email": current_user.email, "gym_id": current_user.gym_id})
+    if not member:
+        raise HTTPException(status_code=404, detail="Member record not found")
+
+    if member["membership_status"] != "active":
+        raise HTTPException(status_code=400, detail="Membership is not active")
+
+    # 5. Prevent Duplicate Check-ins within 24 hours
+    twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
+    recent_attendance = await db.attendance.find_one({
+        "member_id": member["id"],
+        "check_in_time": {"$gte": twenty_four_hours_ago}
+    })
+
+    if recent_attendance:
+        raise HTTPException(status_code=400, detail="You have already checked in within the last 24 hours.")
+
+    # 6. Create Attendance Record
+    attendance_record = AttendanceRecord(
+        gym_id=current_user.gym_id,
+        member_id=member["id"],
+        member_name=member["name"],
+        qr_code_data=request_data.qr_code_data,
+        device_info=request_data.device_info,
+        latitude=request_data.latitude,
+        longitude=request_data.longitude
+    )
+
+    await db.attendance.insert_one(attendance_record.dict())
+
+    await db.members.update_one(
+        {"id": member["id"]},
+        {
+            "$set": {"last_visit": datetime.utcnow()},
+            "$inc": {"total_visits": 1}
+        }
+    )
+
+    return attendance_record
 
 @api_router.get("/attendance/my-status")
 async def get_my_attendance_status(current_user: User = Depends(get_current_user)):
@@ -1859,8 +1951,9 @@ async def get_member_diet_progress(member_id: str, current_user: User = Depends(
     
     return [DietProgress(**record) for record in progress_records]
 
-# Include the router in the main app
+# Include the routers in the main app
 app.include_router(api_router)
+app.include_router(attendance_router)
 
 # CORS Configuration - More secure setup
 ALLOWED_ORIGINS = [

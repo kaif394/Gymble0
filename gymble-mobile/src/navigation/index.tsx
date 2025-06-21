@@ -146,18 +146,23 @@ function RootStack() {
 
 // App navigator that conditionally renders either AuthStack or RootStack based on auth state
 export function AppNavigator() {
+  const { user } = useAuth();
+
   return (
-    <Stack.Navigator initialRouteName="Auth">
-      <Stack.Screen 
-        name="Auth" 
-        component={AuthStack} 
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen 
-        name="Root" 
-        component={RootStack} 
-        options={{ headerShown: false }}
-      />
+    <Stack.Navigator>
+      {user ? (
+        <Stack.Screen
+          name="Root"
+          component={RootStack}
+          options={{ headerShown: false }}
+        />
+      ) : (
+        <Stack.Screen
+          name="Auth"
+          component={AuthStack}
+          options={{ headerShown: false }}
+        />
+      )}
     </Stack.Navigator>
   );
 }

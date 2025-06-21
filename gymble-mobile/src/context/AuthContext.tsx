@@ -1,8 +1,8 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { API_URL, getWorkingApiUrl, testApiConnection } from '../config';
+import { API_URL, getWorkingApiUrl, testApiConnection, APP_CONFIG } from '../config';
 import { Alert } from 'react-native';
+import { AuthService } from '../services/AuthService';
 
 // Define user type
 type User = {
@@ -10,6 +10,7 @@ type User = {
   name: string;
   email: string;
   gym_id?: string;
+  role?: string;
   token?: string;
 };
 
@@ -37,6 +38,8 @@ type AuthContextType = {
   user: User | null;
   isLoading: boolean;
   apiConnected: boolean;
+  isOwnerMode: boolean;
+  setIsOwnerMode: (isOwner: boolean) => void;
   login: (email: string, password: string) => Promise<boolean>;
   register: (name: string, email: string, password: string, gym_id: string, plan_id: string, phone?: string) => Promise<boolean>;
   logout: () => Promise<void>;
@@ -54,6 +57,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [apiConnected, setApiConnected] = useState(false);
   const [currentApiUrl, setCurrentApiUrl] = useState(API_URL);
+  const [isOwnerMode, setIsOwnerMode] = useState(false);
+  
+  // Reference to store the refresh token interval
+  const tokenRefreshInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Check API connection on startup
   useEffect(() => {
@@ -82,14 +89,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Set up axios interceptor to add auth token to requests
   useEffect(() => {
     const interceptor = axios.interceptors.request.use(
-      (config) => {
+      async (config) => {
         // Use the current working API URL
         if (config.url && config.url.startsWith(API_URL)) {
           config.url = config.url.replace(API_URL, currentApiUrl);
         }
         
+        // Check if token is expired and refresh if needed
         if (user?.token) {
-          config.headers.Authorization = `Bearer ${user.token}`;
+          const isExpired = await AuthService.isTokenExpired();
+          if (isExpired) {
+            console.log('Token expired, attempting to refresh...');
+            const refreshed = await AuthService.refreshToken();
+            if (!refreshed) {
+              // If refresh fails, log the user out
+              console.log('Token refresh failed, logging out');
+              await logout();
+              return config;
+            }
+            
+            // Get the new token
+            const newToken = await AuthService.getToken();
+            if (newToken) {
+              // Update user object with new token
+              setUser(prev => prev ? {...prev, token: newToken} : null);
+              config.headers.Authorization = `Bearer ${newToken}`;
+            }
+          } else {
+            // Token is still valid
+            config.headers.Authorization = `Bearer ${user.token}`;
+          }
         }
         return config;
       },
@@ -110,6 +139,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // The request was made and the server responded with a status code
           console.error('Error response data:', error.response.data);
           console.error('Error response status:', error.response.status);
+          
+          // Handle 401 Unauthorized errors (token expired or invalid)
+          if (error.response.status === 401) {
+            // Attempt to refresh the token
+            AuthService.refreshToken().catch(() => {
+              // If refresh fails, log the user out
+              logout();
+              Alert.alert('Session Expired', 'Your session has expired. Please log in again.');
+            });
+          }
         } else if (error.request) {
           // The request was made but no response was received
           console.error('Error request:', error.request);
@@ -128,13 +167,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user, currentApiUrl]);
 
+  // Set up token refresh interval
+  useEffect(() => {
+    // Clear any existing interval
+    if (tokenRefreshInterval.current) {
+      clearInterval(tokenRefreshInterval.current);
+      tokenRefreshInterval.current = null;
+    }
+    
+    // If user is logged in, set up token refresh interval
+    if (user?.token) {
+      // Refresh token every 23 hours (slightly less than the 24-hour expiry)
+      tokenRefreshInterval.current = setInterval(async () => {
+        console.log('Attempting scheduled token refresh');
+        await AuthService.refreshToken();
+      }, 23 * 60 * 60 * 1000); // 23 hours in milliseconds
+    }
+    
+    // Clean up interval on unmount
+    return () => {
+      if (tokenRefreshInterval.current) {
+        clearInterval(tokenRefreshInterval.current);
+      }
+    };
+  }, [user]);
+
   // Check if user is logged in on app start
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const userJson = await AsyncStorage.getItem('user');
-        if (userJson) {
-          setUser(JSON.parse(userJson));
+        // Get user from secure storage
+        const userData = await AuthService.getUser();
+        if (userData) {
+          // Check if token is expired
+          const isExpired = await AuthService.isTokenExpired();
+          if (isExpired) {
+            // Try to refresh the token
+            const refreshed = await AuthService.refreshToken();
+            if (!refreshed) {
+              // If refresh fails, clear user data
+              await AuthService.logout();
+              setUser(null);
+            } else {
+              // Get the refreshed token and update user
+              const newToken = await AuthService.getToken();
+              setUser({...userData, token: newToken});
+            }
+          } else {
+            // Token is still valid
+            setUser(userData);
+          }
         }
       } catch (error) {
         console.error('Failed to load user from storage', error);
@@ -188,23 +270,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       console.log(`Attempting to login with API URL: ${currentApiUrl}`);
       
-      const response = await axios.post(`${currentApiUrl}/api/auth/login`, { email, password })
-        .catch(error => {
-          if (error.response) {
-            // The request was made and the server responded with a status code
-            // that falls out of the range of 2xx
-            console.error('Error response data:', error.response.data);
-            console.error('Error response status:', error.response.status);
-          } else if (error.request) {
-            // The request was made but no response was received
-            console.error('Error request:', error.request);
-            console.error('Network error - no response received');
-          } else {
-            // Something happened in setting up the request that triggered an Error
-            console.error('Error message:', error.message);
-          }
-          throw error;
-        });
+      const response = await axios.post(`${currentApiUrl}/api/auth/login`, { 
+        email, 
+        password 
+      }).catch(error => {
+        if (error.response) {
+          // The request was made and the server responded with a status code
+          // that falls out of the range of 2xx
+          console.error('Error response data:', error.response.data);
+          console.error('Error response status:', error.response.status);
+        } else if (error.request) {
+          // The request was made but no response was received
+          console.error('Error request:', error.request);
+          console.error('Network error - no response received');
+        } else {
+          // Something happened in setting up the request that triggered an Error
+          console.error('Error message:', error.message);
+        }
+        throw error;
+      });
       
       // Check for access_token instead of token
       if (response.data.access_token && response.data.user) {
@@ -212,8 +296,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ...response.data.user,
           token: response.data.access_token // Store access_token as token
         };
+        
+        // Save user data and token securely
+        await AuthService.saveUser(userData);
+        await AuthService.saveToken(response.data.access_token);
+        
         setUser(userData);
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
         return true;
       }
       return false;
@@ -258,9 +346,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ...response.data.user,
           token: response.data.access_token // Store access_token as token
         };
+        
+        // Save user data and token securely
+        await AuthService.saveUser(userData);
+        await AuthService.saveToken(response.data.access_token);
+        
         console.log('Setting user data:', userData);
         setUser(userData);
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
         return true;
       }
       console.log('Registration failed: No access_token or user data in response');
@@ -319,8 +411,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Logout function
   const logout = async (): Promise<void> => {
     try {
-      await AsyncStorage.removeItem('user');
+      // Clear secure storage
+      await AuthService.logout();
       setUser(null);
+      
+      // Clear token refresh interval
+      if (tokenRefreshInterval.current) {
+        clearInterval(tokenRefreshInterval.current);
+        tokenRefreshInterval.current = null;
+      }
     } catch (error) {
       console.error('Logout error', error);
     }
@@ -331,6 +430,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       user, 
       isLoading, 
       apiConnected,
+      isOwnerMode,
+      setIsOwnerMode,
       login, 
       register, 
       logout, 

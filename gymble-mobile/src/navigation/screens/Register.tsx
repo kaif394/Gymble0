@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TextInput, TouchableOpacity, Text, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { 
+  StyleSheet, 
+  View, 
+  TextInput, 
+  TouchableOpacity, 
+  Text, 
+  Alert, 
+  ScrollView, 
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform
+} from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
@@ -147,6 +158,13 @@ export function Register() {
       return;
     }
 
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
     try {
       // Check connection before attempting registration
       const connected = await checkApiConnection();
@@ -178,142 +196,152 @@ export function Register() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContainer}>
-      <View style={styles.container}>
-        <Text style={styles.title}>Gymble</Text>
-        <Text style={styles.subtitle}>Create an account</Text>
-        
-        {/* Connection status indicator */}
-        <View style={styles.connectionContainer}>
-          <Text style={styles.connectionLabel}>Server connection: </Text>
-          <Text 
-            style={[
-              styles.connectionStatus, 
-              connectionStatus === 'Connected' ? styles.connected : 
-              connectionStatus === 'Checking connection...' ? styles.checking : 
-              styles.notConnected
-            ]}
-          >
-            {connectionStatus}
-          </Text>
-          {connectionStatus !== 'Connected' && (
-            <TouchableOpacity style={styles.retryButton} onPress={handleRetryConnection}>
-              <Text style={styles.retryButtonText}>Retry</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        
-        <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="Full Name"
-            value={name}
-            onChangeText={setName}
-            autoCapitalize="words"
-          />
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={{ flex: 1 }}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.container}>
+          <Text style={styles.title}>GYMBLE</Text>
+          <Text style={styles.subtitle}>Create your account</Text>
           
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Phone Number"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm Password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-          />
-          
-          <Text style={styles.sectionLabel}>Select Gym</Text>
-          {loadingGyms ? (
-            <ActivityIndicator size="small" color="#4CAF50" />
-          ) : (
-            <View style={styles.pickerContainer}>
-              {gyms.length > 0 ? (
-                <Picker
-                  selectedValue={selectedGym}
-                  onValueChange={(itemValue) => setSelectedGym(itemValue)}
-                  style={styles.picker}
-                >
-                  {gyms.map((gym) => (
-                    <Picker.Item key={gym.id} label={gym.name} value={gym.id} />
-                  ))}
-                </Picker>
-              ) : (
-                <Text style={styles.noDataText}>No gyms available</Text>
-              )}
-            </View>
-          )}
-          
-          <Text style={styles.sectionLabel}>Select Plan</Text>
-          {loadingPlans ? (
-            <ActivityIndicator size="small" color="#4CAF50" />
-          ) : (
-            <View style={styles.pickerContainer}>
-              {plans.length > 0 ? (
-                <Picker
-                  selectedValue={selectedPlan}
-                  onValueChange={(itemValue) => setSelectedPlan(itemValue)}
-                  style={styles.picker}
-                >
-                  {plans.map((plan) => (
-                    <Picker.Item 
-                      key={plan.id} 
-                      label={`${plan.name} - $${plan.price} (${plan.duration_days} days)`} 
-                      value={plan.id} 
-                    />
-                  ))}
-                </Picker>
-              ) : (
-                <Text style={styles.noDataText}>
-                  {selectedGym ? 'No plans available for this gym' : 'Please select a gym first'}
-                </Text>
-              )}
-            </View>
-          )}
-          
-          <TouchableOpacity 
-            style={[styles.button, isLoading && styles.disabledButton]}
-            onPress={handleRegister}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.buttonText}>Register</Text>
+          {/* Connection status indicator */}
+          <View style={styles.connectionContainer}>
+            <Text style={styles.connectionLabel}>Server connection: </Text>
+            <Text 
+              style={[
+                styles.connectionStatus, 
+                connectionStatus === 'Connected' ? styles.connected : 
+                connectionStatus === 'Checking connection...' ? styles.checking : 
+                styles.notConnected
+              ]}
+            >
+              {connectionStatus}
+            </Text>
+            {connectionStatus !== 'Connected' && (
+              <TouchableOpacity style={styles.retryButton} onPress={handleRetryConnection}>
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </View>
           
-          <View style={styles.loginContainer}>
-            <Text>Already have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.loginText}>Login</Text>
+          <View style={styles.form}>
+            <Text style={styles.inputLabel}>Full Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your full name"
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+            />
+            
+            <Text style={styles.inputLabel}>Email</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your email address"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            
+            <Text style={styles.inputLabel}>Phone Number</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your phone number"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+            />
+            
+            <Text style={styles.inputLabel}>Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Create a password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+            
+            <Text style={styles.inputLabel}>Confirm Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm your password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry
+            />
+            
+            <Text style={styles.sectionLabel}>Select Gym</Text>
+            {loadingGyms ? (
+              <ActivityIndicator size="small" color="#4CAF50" />
+            ) : (
+              <View style={styles.pickerContainer}>
+                {gyms.length > 0 ? (
+                  <Picker
+                    selectedValue={selectedGym}
+                    onValueChange={(itemValue) => setSelectedGym(itemValue)}
+                    style={styles.picker}
+                  >
+                    {gyms.map((gym) => (
+                      <Picker.Item key={gym.id} label={gym.name} value={gym.id} />
+                    ))}
+                  </Picker>
+                ) : (
+                  <Text style={styles.noDataText}>No gyms available</Text>
+                )}
+              </View>
+            )}
+            
+            <Text style={styles.sectionLabel}>Select Plan</Text>
+            {loadingPlans ? (
+              <ActivityIndicator size="small" color="#4CAF50" />
+            ) : (
+              <View style={styles.pickerContainer}>
+                {plans.length > 0 ? (
+                  <Picker
+                    selectedValue={selectedPlan}
+                    onValueChange={(itemValue) => setSelectedPlan(itemValue)}
+                    style={styles.picker}
+                  >
+                    {plans.map((plan) => (
+                      <Picker.Item 
+                        key={plan.id} 
+                        label={`${plan.name} - $${plan.price} (${plan.duration_days} days)`} 
+                        value={plan.id} 
+                      />
+                    ))}
+                  </Picker>
+                ) : (
+                  <Text style={styles.noDataText}>
+                    {selectedGym ? 'No plans available for this gym' : 'Please select a gym first'}
+                  </Text>
+                )}
+              </View>
+            )}
+            
+            <TouchableOpacity 
+              style={[styles.button, isLoading && styles.disabledButton]}
+              onPress={handleRegister}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.buttonText}>Register</Text>
+              )}
             </TouchableOpacity>
+            
+            <View style={styles.loginContainer}>
+              <Text>Already have an account? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+                <Text style={styles.loginText}>Login</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -326,18 +354,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8f9fa',
   },
   title: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: 'bold',
     marginBottom: 10,
-    color: '#333',
+    color: '#4CAF50',
+    letterSpacing: 1,
   },
   subtitle: {
     fontSize: 18,
-    marginBottom: 10,
+    marginBottom: 20,
     color: '#666',
+    textAlign: 'center',
   },
   connectionContainer: {
     flexDirection: 'row',
@@ -345,7 +375,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     padding: 10,
     backgroundColor: '#f0f0f0',
-    borderRadius: 5,
+    borderRadius: 8,
     width: '100%',
     maxWidth: 400,
   },
@@ -369,8 +399,8 @@ const styles = StyleSheet.create({
   retryButton: {
     marginLeft: 'auto',
     backgroundColor: '#4CAF50',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 5,
   },
   retryButtonText: {
@@ -381,23 +411,32 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
   },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 5,
+    color: '#555',
+    marginLeft: 2,
+  },
   input: {
     backgroundColor: '#fff',
-    borderRadius: 5,
+    borderRadius: 8,
     padding: 15,
     marginBottom: 15,
     borderWidth: 1,
     borderColor: '#ddd',
+    fontSize: 16,
   },
   sectionLabel: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
     color: '#333',
+    marginTop: 5,
   },
   pickerContainer: {
     backgroundColor: '#fff',
-    borderRadius: 5,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#ddd',
     marginBottom: 15,
@@ -414,10 +453,11 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: '#4CAF50',
-    padding: 15,
-    borderRadius: 5,
+    padding: 16,
+    borderRadius: 8,
     alignItems: 'center',
     marginTop: 10,
+    elevation: 2,
   },
   disabledButton: {
     backgroundColor: '#A9A9A9',
@@ -431,6 +471,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 20,
+    marginBottom: 30,
   },
   loginText: {
     color: '#4CAF50',
